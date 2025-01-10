@@ -1,15 +1,16 @@
 import pygame
 import math
-from enum import Enum
-from typing import List, Dict, Optional
 import random
+from enum import Enum
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+from collections import defaultdict
 
-# Inicjalizacja Pygame
 pygame.init()
 
 # Stałe
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
+SCREEN_WIDTH = 1024
+SCREEN_HEIGHT = 700
 FPS = 60
 
 # Kolory
@@ -18,165 +19,262 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 GREEN = (0, 255, 0)
+GRAY = (128, 128, 128)
+BROWN = (139, 69, 19)
+YELLOW = (255, 255, 0)
+
+# Stałe hexów
+HEX_SIZE = 40
+HEX_WIDTH = HEX_SIZE * 2
+HEX_HEIGHT = math.sqrt(3) * HEX_SIZE
+GRID_WIDTH = 20
+GRID_HEIGHT = 15
+
+class TerrainType(Enum):
+    GRASS = {"color": GREEN, "movement_cost": 1}
+    MOUNTAIN = {"color": GRAY, "movement_cost": 2}
+    WATER = {"color": (0, 100, 255), "movement_cost": 3}
+    FOREST = {"color": (0, 100, 0), "movement_cost": 2}
+
+class BuildingType(Enum):
+    CITY = {"cost": 500, "income": 50, "defense": 2}
+    FACTORY = {"cost": 300, "income": 30, "production_bonus": 1.5}
+    FORT = {"cost": 200, "income": 0, "defense": 3}
+    MINE = {"cost": 400, "income": 40, "resource_bonus": 1.5}
 
 class UnitType(Enum):
-    SOLDIER = {"speed": 2, "cost": 100, "size": 10, "color": BLUE}
-    TANK = {"speed": 1.5, "cost": 300, "size": 15, "color": RED}
-    PLANE = {"speed": 4, "cost": 500, "size": 12, "color": GREEN}
+    SOLDIER = {"speed": 2, "cost": 100, "attack": 1, "defense": 1, "range": 1}
+    TANK = {"speed": 3, "cost": 300, "attack": 3, "defense": 2, "range": 1}
+    PLANE = {"speed": 4, "cost": 500, "attack": 2, "defense": 1, "range": 2}
+    ARTILLERY = {"speed": 1, "cost": 400, "attack": 4, "defense": 1, "range": 3}
+
+@dataclass
+class Hex:
+    q: int  # hex coordinates
+    r: int
+    terrain: TerrainType
+    building: Optional[BuildingType] = None
+    unit: Optional['Unit'] = None
+    owner: Optional[str] = None
+
+    def pixel_position(self) -> Tuple[float, float]:
+        x = HEX_SIZE * (3/2 * self.q)
+        y = HEX_SIZE * (math.sqrt(3)/2 * self.q + math.sqrt(3) * self.r)
+        return (x + SCREEN_WIDTH/4, y + SCREEN_HEIGHT/4)
+
+    def __hash__(self):
+        return hash((self.q, self.r))  # Make Hex hashable using q and r coordinates
+
+    def __eq__(self, other):
+        return isinstance(other, Hex) and self.q == other.q and self.r == other.r  # Compare based on coordinates
 
 class Unit:
-    def __init__(self, unit_type: UnitType, x: float, y: float, owner: str):
+    def __init__(self, unit_type: UnitType, owner: str):
         self.type = unit_type
-        self.x = x
-        self.y = y
-        self.target_x: Optional[float] = None
-        self.target_y: Optional[float] = None
         self.owner = owner
-        self.selected = False
+        self.moved_this_turn = False
+        self.health = 100
         
-    def move(self):
-        if self.target_x is not None and self.target_y is not None:
-            dx = self.target_x - self.x
-            dy = self.target_y - self.y
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            if distance < self.type.value["speed"]:
-                self.x = self.target_x
-                self.y = self.target_y
-                self.target_x = None
-                self.target_y = None
-            else:
-                speed = self.type.value["speed"]
-                ratio = speed / distance
-                self.x += dx * ratio
-                self.y += dy * ratio
-    
-    def draw(self, screen):
-        color = self.type.value["color"]
-        size = self.type.value["size"]
-        pygame.draw.circle(screen, color, (int(self.x), int(self.y)), size)
-        if self.selected:
-            pygame.draw.circle(screen, WHITE, (int(self.x), int(self.y)), 
-                             size + 2, 2)
+    def can_move_to(self, start_hex: Hex, target_hex: Hex) -> bool:
+        if target_hex.unit is not None:
+            return False
+        distance = hex_distance(start_hex, target_hex)
+        return (distance <= self.type.value["speed"] and 
+                not self.moved_this_turn)
 
-class City:
-    def __init__(self, x: int, y: int, owner: str, name: str):
-        self.x = x
-        self.y = y
-        self.owner = owner
+def hex_distance(start: Hex, target: Hex) -> int:
+    return max(abs(start.q - target.q), abs(start.r - target.r), 
+               abs((start.q + start.r) - (target.q + target.r)))
+
+class Player:
+    def __init__(self, name: str, color: Tuple[int, int, int]):
         self.name = name
-        self.population = 1000
-        self.resources = 500
-        self.production = 10
-        
-    def draw(self, screen):
-        color = BLUE if self.owner == "Player" else RED
-        pygame.draw.rect(screen, color, 
-                        (self.x - 20, self.y - 20, 40, 40))
-        # Rysowanie nazwy miasta
-        font = pygame.font.Font(None, 24)
-        text = font.render(self.name, True, BLACK)
-        screen.blit(text, (self.x - 30, self.y + 25))
+        self.color = color
+        self.money = 1000
+        self.income = 100
+        self.units: List[Unit] = []
+        self.buildings: List[Tuple[BuildingType, Hex]] = []
 
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Python RTS Game")
+        pygame.display.set_caption("Hex Strategy Game")
         self.clock = pygame.time.Clock()
         
-        self.units: List[Unit] = []
-        self.cities: List[City] = [
-            City(100, 100, "Player", "Alfa City"),
-            City(600, 400, "AI", "Beta City")
+        self.players = [
+            Player("Player", BLUE),
+            Player("AI 1", RED),
+            Player("AI 2", GREEN),
+            Player("AI 3", YELLOW)
         ]
-        self.resources = 1000
-        self.selected_unit = None
+        self.current_player_index = 0
+        self.selected_hex = None
+        self.possible_moves = set()
+        self.turn_number = 1
         
-    def handle_events(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
+        self.init_map()
+        self.init_starting_positions()
+        
+    def init_map(self):
+        self.hexes = {}
+        for q in range(-GRID_WIDTH//2, GRID_WIDTH//2):
+            for r in range(-GRID_HEIGHT//2, GRID_HEIGHT//2):
+                if abs(q + r) <= GRID_WIDTH//2:
+                    terrain = random.choice(list(TerrainType))
+                    self.hexes[(q, r)] = Hex(q, r, terrain)
+
+    def init_starting_positions(self):
+        # Przydziel początkowe miasta i jednostki dla graczy
+        starting_positions = [
+            (-5, -5), (5, 5), (5, -5), (-5, 5)
+        ]
+        
+        for i, pos in enumerate(starting_positions):
+            if i < len(self.players):
+                hex = self.hexes.get(pos)
+                if hex:
+                    hex.building = BuildingType.CITY
+                    hex.owner = self.players[i].name
+                    # Dodaj początkowe jednostki
+                    hex.unit = Unit(UnitType.SOLDIER, self.players[i].name)
+                    self.players[i].units.append(hex.unit)
+                    self.players[i].buildings.append((BuildingType.CITY, hex))
+
+    def get_hex_at_pixel(self, x: float, y: float) -> Optional[Hex]:
+        for hex in self.hexes.values():
+            hx, hy = hex.pixel_position()
+            if math.sqrt((x - hx)**2 + (y - hy)**2) < HEX_SIZE:
+                return hex
+        return None
+
+    def draw_hex(self, hex: Hex):
+        x, y = hex.pixel_position()
+        points = []
+        for i in range(6):
+            angle = i * math.pi / 3
+            points.append((x + HEX_SIZE * math.cos(angle), y + HEX_SIZE * math.sin(angle)))
+        
+        # Rysuj teren
+        pygame.draw.polygon(self.screen, hex.terrain.value["color"], points)
+        pygame.draw.polygon(self.screen, BLACK, points, 1)
+        
+        # Rysuj budynek
+        if hex.building:
+            pygame.draw.circle(self.screen, 
+                             self.get_player_by_name(hex.owner).color if hex.owner else BLACK,
+                             (int(x), int(y)), HEX_SIZE//2)
+        
+        # Rysuj jednostkę
+        if hex.unit:
+            unit_color = self.get_player_by_name(hex.unit.owner).color
+            unit_radius = HEX_SIZE//3
+            pygame.draw.circle(self.screen, unit_color, 
+                             (int(x), int(y) + HEX_SIZE//3), unit_radius)
             
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_x, mouse_y = pygame.mouse.get_pos()
-                
-                # Obsługa kliknięć na jednostki
-                clicked_unit = None
-                for unit in self.units:
-                    distance = math.sqrt((mouse_x - unit.x)**2 + 
-                                      (mouse_y - unit.y)**2)
-                    if distance < unit.type.value["size"]:
-                        clicked_unit = unit
-                        break
-                
-                if clicked_unit:
-                    # Zaznaczanie jednostki
-                    if self.selected_unit:
-                        self.selected_unit.selected = False
-                    self.selected_unit = clicked_unit
-                    clicked_unit.selected = True
-                elif self.selected_unit:
-                    # Wydawanie rozkazu ruchu
-                    self.selected_unit.target_x = mouse_x
-                    self.selected_unit.target_y = mouse_y
-            
-            # Tworzenie jednostek
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_s and self.resources >= UnitType.SOLDIER.value["cost"]:
-                    self.create_unit(UnitType.SOLDIER)
-                elif event.key == pygame.K_t and self.resources >= UnitType.TANK.value["cost"]:
-                    self.create_unit(UnitType.TANK)
-                elif event.key == pygame.K_p and self.resources >= UnitType.PLANE.value["cost"]:
-                    self.create_unit(UnitType.PLANE)
-                    
-        return True
-    
-    def create_unit(self, unit_type: UnitType):
-        player_city = next(city for city in self.cities if city.owner == "Player")
-        self.units.append(Unit(unit_type, player_city.x, player_city.y, "Player"))
-        self.resources -= unit_type.value["cost"]
-    
-    def update(self):
-        # Aktualizacja jednostek
-        for unit in self.units:
-            unit.move()
+            # Rysuj pasek życia
+            health_width = (HEX_SIZE//2) * (hex.unit.health / 100)
+            pygame.draw.rect(self.screen, RED, 
+                           (x - HEX_SIZE//4, y + HEX_SIZE//2, 
+                            HEX_SIZE//2, 4))
+            pygame.draw.rect(self.screen, GREEN,
+                           (x - HEX_SIZE//4, y + HEX_SIZE//2, 
+                            health_width, 4))
+
+        # Podświetl możliwe ruchy
+        if hex in self.possible_moves:
+            pygame.draw.polygon(self.screen, (255, 255, 0, 128), points, 2)
+
+    def draw_interface(self):
+        # Rysuj górny panel
+        pygame.draw.rect(self.screen, GRAY, (0, 0, SCREEN_WIDTH, 50))
         
-        # Aktualizacja zasobów
-        for city in self.cities:
-            if city.owner == "Player":
-                self.resources += city.production / FPS
-    
-    def draw(self):
-        self.screen.fill(WHITE)
-        
-        # Rysowanie miast
-        for city in self.cities:
-            city.draw(self.screen)
-        
-        # Rysowanie jednostek
-        for unit in self.units:
-            unit.draw(self.screen)
-        
-        # Rysowanie interfejsu
+        # Informacje o obecnym graczu
+        current_player = self.players[self.current_player_index]
         font = pygame.font.Font(None, 36)
-        resources_text = font.render(f"Resources: {int(self.resources)}", True, BLACK)
-        self.screen.blit(resources_text, (10, 10))
         
-        help_text = font.render("S - Soldier (100), T - Tank (300), P - Plane (500)", 
-                              True, BLACK)
-        self.screen.blit(help_text, (10, SCREEN_HEIGHT - 30))
+        # Tura i gracz
+        turn_text = font.render(f"Turn: {self.turn_number}", True, WHITE)
+        player_text = font.render(f"Player: {current_player.name}", True, 
+                                current_player.color)
+        money_text = font.render(f"Money: {current_player.money}", True, WHITE)
+        income_text = font.render(f"Income: {current_player.income}", True, WHITE)
         
-        pygame.display.flip()
-    
+        self.screen.blit(turn_text, (10, 10))
+        self.screen.blit(player_text, (200, 10))
+        self.screen.blit(money_text, (400, 10))
+        self.screen.blit(income_text, (600, 10))
+        
+        # Przycisk końca tury
+        end_turn_rect = pygame.draw.rect(self.screen, GREEN, 
+                                       (SCREEN_WIDTH - 120, 10, 100, 30))
+        end_turn_text = font.render("End Turn", True, BLACK)
+        self.screen.blit(end_turn_text, (SCREEN_WIDTH - 110, 15))
+
+    def get_player_by_name(self, name: str) -> Optional[Player]:
+        return next((p for p in self.players if p.name == name), None)
+
+    def handle_click(self, x: float, y: float):
+        hex = self.get_hex_at_pixel(x, y)
+        if hex:
+            if hex.unit and hex.unit.owner == self.players[self.current_player_index].name:
+                self.selected_hex = hex
+                self.possible_moves = self.calculate_possible_moves(hex)
+            elif self.selected_hex:
+                if hex in self.possible_moves:
+                    self.move_unit(self.selected_hex, hex)
+                    self.selected_hex = None
+                    self.possible_moves = set()
+
+    def calculate_possible_moves(self, hex: Hex) -> set:
+        moves = set()
+        for q in range(hex.q - 1, hex.q + 2):
+            for r in range(hex.r - 1, hex.r + 2):
+                target_hex = self.hexes.get((q, r))
+                if target_hex and hex_distance(hex, target_hex) <= 1:
+                    moves.add(target_hex)
+        return moves
+
+    def move_unit(self, from_hex: Hex, to_hex: Hex):
+        if to_hex.unit is None:
+            to_hex.unit = from_hex.unit
+            from_hex.unit = None
+            self.players[self.current_player_index].units.append(to_hex.unit)
+
+    def next_turn(self):
+        self.turn_number += 1
+        self.current_player_index = (self.current_player_index + 1) % len(self.players)
+        for player in self.players:
+            player.money += player.income  # Zarobki co turę
+        self.selected_hex = None
+        self.possible_moves = set()
+
     def run(self):
         running = True
         while running:
-            running = self.handle_events()
-            self.update()
-            self.draw()
+            self.screen.fill(WHITE)
+
+            # Rysowanie mapy
+            for hex in self.hexes.values():
+                self.draw_hex(hex)
+
+            # Rysowanie interfejsu
+            self.draw_interface()
+            
+            # Obsługuje zdarzenia
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        self.handle_click(event.pos[0], event.pos[1])
+                    elif event.button == 3:  # Kliknięcie prawym przyciskiem na kończenie tury
+                        self.next_turn()
+            
+            pygame.display.flip()
             self.clock.tick(FPS)
 
-if __name__ == "__main__":
-    game = Game()
-    game.run()
-    pygame.quit()
+# Uruchomienie gry
+game = Game()
+game.run()
+
+pygame.quit()
