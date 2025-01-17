@@ -2,188 +2,21 @@ import pygame
 import math
 import random
 from enum import Enum
-from typing import List, Dict, Tuple
-
-# Stałe gry
-WINDOW_MIN_SIZE = (800, 600)
-HEX_SIZE = 40
-COLORS = {
-    'PLAYER': (0, 255, 0),
-    'BOT1': (255, 0, 0),
-    'BOT2': (0, 0, 255),
-    'BOT3': (255, 255, 0),
-    'EMPTY': (200, 200, 200)
-}
-
-class BuildingType(Enum):
-    CAPITAL = "Capital"
-    BARRACKS = "Barracks"
-    RESEARCH_LAB = "Research Lab"
-    FACTORY = "Factory"
-    MINE = "Mine"
-
-class UnitType(Enum):
-    INFANTRY = "Infantry"
-    TANK = "Tank"
-    ARTILLERY = "Artillery"
-    AIRCRAFT = "Aircraft"
-
-class ResearchType(Enum):
-    MILITARY = "Military Technology"
-    ECONOMY = "Economic Development"
-    DEFENSE = "Defense Systems"
-
-class Building:
-    def __init__(self, building_type: BuildingType, cost: int, position: Tuple[int, int]):
-        self.type = building_type
-        self.cost = cost
-        self.position = position
-        self.health = 100
-        self.level = 1
-
-class Unit:
-    def __init__(self, unit_type: UnitType, cost: int, attack: int, defense: int, movement: int):
-        self.type = unit_type
-        self.cost = cost
-        self.attack = attack
-        self.defense = defense
-        self.movement = movement
-        self.health = 100
-        self.moves_left = movement
-
-class Player:
-    def __init__(self, id: int, is_bot: bool = False):
-        self.id = id
-        self.is_bot = is_bot
-        self.gold = 1000
-        self.buildings: List[Building] = []
-        self.units: List[Unit] = []
-        self.research_levels: Dict[ResearchType, int] = {
-            research_type: 1 for research_type in ResearchType
-        }
-
-class HexTile:
-    def __init__(self, q: int, r: int):
-        self.q = q
-        self.r = r
-        self.owner = None
-        self.unit = None
-        self.building = None
-        self.terrain_type = "plain"
-
-class HexGrid:
-    def __init__(self, radius: int):
-        self.radius = radius
-        self.tiles: Dict[Tuple[int, int], HexTile] = {}
-        self._generate_grid()
-
-    def _generate_grid(self):
-        for q in range(-self.radius, self.radius + 1):
-            r1 = max(-self.radius, -q - self.radius)
-            r2 = min(self.radius, -q + self.radius)
-            for r in range(r1, r2 + 1):
-                self.tiles[(q, r)] = HexTile(q, r)
-
-    def get_hex_at_pixel(self, x: float, y: float) -> Tuple[int, int]:
-        q = (2/3 * x) / HEX_SIZE
-        r = (-1/3 * x + math.sqrt(3)/3 * y) / HEX_SIZE
-        return self._round_hex(q, r)
-
-    def _round_hex(self, q: float, r: float) -> Tuple[int, int]:
-        s = -q - r
-        q = round(q)
-        r = round(r)
-        s = round(s)
-        
-        q_diff = abs(q - q)
-        r_diff = abs(r - r)
-        s_diff = abs(s - s)
-        
-        if q_diff > r_diff and q_diff > s_diff:
-            q = -r - s
-        elif r_diff > s_diff:
-            r = -q - s
-            
-        return (q, r)
-
-class Game:
-    def __init__(self, screen_size: Tuple[int, int]):
-        pygame.init()
-        self.screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
-        pygame.display.set_caption("Hex Strategy Game")
-        
-        self.grid = HexGrid(10)  # 10 heksów promienia
-        self.players = [
-            Player(0, is_bot=False),  # Gracz
-            Player(1, is_bot=True),   # Bot 1
-            Player(2, is_bot=True),   # Bot 2
-            Player(3, is_bot=True)    # Bot 3
-        ]
-        self.current_player = 0
-        self.selected_tile = None
-        self.running = True
-
-    def handle_events(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            elif event.type == pygame.VIDEORESIZE:
-                self.screen = pygame.display.set_mode(
-                    (max(event.w, WINDOW_MIN_SIZE[0]), 
-                     max(event.h, WINDOW_MIN_SIZE[1])),
-                    pygame.RESIZABLE
-                )
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                self.handle_click(event.pos)
-
-    def handle_click(self, pos: Tuple[int, int]):
-        hex_pos = self.grid.get_hex_at_pixel(*pos)
-        if hex_pos in self.grid.tiles:
-            self.selected_tile = hex_pos
-            # Tutaj dodaj logikę wyboru akcji dla wybranego hexa
-
-    def run_bot_turn(self, bot: Player):
-        # Podstawowa logika AI dla botów
-        # 1. Zbieranie zasobów
-        self._bot_collect_resources(bot)
-        # 2. Budowanie
-        self._bot_build_structures(bot)
-        # 3. Tworzenie jednostek
-        self._bot_create_units(bot)
-        # 4. Ruchy jednostek
-        self._bot_move_units(bot)
-
-    def _bot_collect_resources(self, bot: Player):
-        for building in bot.buildings:
-            if building.type == BuildingType.MINE:
-                bot.gold += 50 * building.level
-
-    def _bot_build_structures(self, bot: Player):
-        if bot.gold >= 300 and len(bot.buildings) < 5:
-            # Losowe budowanie struktur
-            building_type = random.choice(list(BuildingType))
-            # Tutaj dodaj logikę wyboru miejsca i budowania
-
-    import pygame
-import math
-import random
-from enum import Enum
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
+from camera import Camera
 
 # Game constants
 WINDOW_MIN_SIZE = (800, 600)
 HEX_SIZE = 40
+# Define colors - Updated to match the player IDs
 COLORS = {
-    'PLAYER': (0, 255, 0),
-    'BOT1': (255, 0, 0),
-    'BOT2': (0, 0, 255),
-    'BOT3': (255, 255, 0),
-    'EMPTY': (200, 200, 200),
-    'SELECTED': (255, 165, 0),
-    'MOVE_RANGE': (173, 216, 230)
+    'EMPTY': (255, 255, 255),    # White
+    0: (0, 0, 255),      # Blue - Player
+    1: (255, 0, 0),      # Red - Bot 1
+    2: (0, 255, 0),      # Green - Bot 2
+    3: (255, 255, 0),    # Yellow - Bot 3
 }
-
 @dataclass
 class BuildingStats:
     cost: int
@@ -313,6 +146,10 @@ class Game:
         pygame.display.set_caption("Hex Strategy Game")
         self.clock = pygame.time.Clock()
         
+        # Initialize camera
+        self.camera = Camera(screen_size[0], screen_size[1])
+        
+        # Initialize game state
         self.grid = self._create_initial_grid()
         self.players = [
             Player(0, is_bot=False),  # Player
@@ -352,103 +189,89 @@ class Game:
                 tile.unit = unit
                 self.players[i].units.append(unit)
 
-    def get_neighbors(self, pos: Tuple[int, int]) -> List[Tuple[int, int]]:
-        q, r = pos
-        directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-        return [(q + dq, r + dr) for dq, dr in directions if (q + dq, r + dr) in self.grid]
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left mouse button
+                    # Convert screen coordinates to world coordinates for hex grid
+                    mouse_x, mouse_y = event.pos
+                    world_x, world_y = self.camera.screen_to_world(mouse_x, mouse_y)
+                    self.handle_click((world_x, world_y))
+                elif event.button == 2:  # Middle mouse button
+                    self.camera.start_drag(*event.pos)
+                elif event.button == 4:  # Mouse wheel up
+                    self.camera.handle_mouse_wheel(0.1)
+                elif event.button == 5:  # Mouse wheel down
+                    self.camera.handle_mouse_wheel(-0.1)
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 2:  # Middle mouse button
+                    self.camera.stop_drag()
+            elif event.type == pygame.MOUSEMOTION:
+                if event.buttons[1]:  # Middle mouse button
+                    self.camera.update_drag(*event.pos)
+            elif event.type == pygame.VIDEORESIZE:
+                self.camera.width = event.w
+                self.camera.height = event.h
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    self.end_turn()
 
-    def get_tiles_in_range(self, start: Tuple[int, int], movement: int) -> List[Tuple[int, int]]:
-        result = []
-        visited = {start}
-        queue = [(start, movement)]
-        
-        while queue:
-            pos, moves_left = queue.pop(0)
-            result.append(pos)
+    def _draw_grid(self):
+        for q, r in self.grid:
+            # Calculate base hex position
+            x = HEX_SIZE * (3/2 * q)
+            y = HEX_SIZE * (math.sqrt(3)/2 * q + math.sqrt(3) * r)
             
-            if moves_left > 0:
-                for next_pos in self.get_neighbors(pos):
-                    if next_pos not in visited and self.grid[next_pos].terrain_type != "water":
-                        visited.add(next_pos)
-                        queue.append((next_pos, moves_left - 1))
-        
-        return result
-
-    def handle_click(self, pos: Tuple[int, int]):
-        hex_pos = self.pixel_to_hex(pos)
-        if hex_pos not in self.grid:
-            return
-
-        clicked_tile = self.grid[hex_pos]
-        
-        # If it's the player's turn
-        if not self.players[self.current_player].is_bot:
-            if self.selected_tile is None:
-                # Select tile only if it belongs to the player
-                if (clicked_tile.owner == self.current_player or 
-                    (clicked_tile.unit and clicked_tile.unit.owner == self.current_player)):
-                    self.selected_tile = hex_pos
-                    if clicked_tile.unit:
-                        self.possible_moves = self.get_tiles_in_range(hex_pos, clicked_tile.unit.moves_left)
-            else:
-                # Perform action on the selected tile
-                self.handle_action(self.selected_tile, hex_pos)
-                self.selected_tile = None
-                self.possible_moves = []
-
-    def handle_action(self, from_pos: Tuple[int, int], to_pos: Tuple[int, int]):
-        from_tile = self.grid[from_pos]
-        to_tile = self.grid[to_pos]
-        
-        # Unit movement
-        if from_tile.unit and to_pos in self.possible_moves:
-            if to_tile.unit:
-                # Attack
-                if from_tile.unit.can_attack(to_tile.unit, self.hex_distance(from_pos, to_pos)):
-                    self.resolve_combat(from_tile.unit, to_tile.unit, to_tile)
-            else:
-                # Move
-                movement_cost = 1
-                if to_tile.terrain_type == "forest":
-                    movement_cost = 2
-                elif to_tile.terrain_type == "mountain":
-                    movement_cost = 3
+            # Convert to screen coordinates using camera
+            screen_x, screen_y = self.camera.world_to_screen(x, y)
+            
+            # Calculate hex points
+            points = []
+            hex_size = HEX_SIZE * self.camera.zoom
+            for i in range(6):
+                angle_rad = math.pi / 180 * (60 * i - 30)
+                px = screen_x + hex_size * math.cos(angle_rad)
+                py = screen_y + hex_size * math.sin(angle_rad)
+                points.append((px, py))
+            
+            # Check if hex is visible on screen before drawing
+            screen_rect = pygame.Rect(0, 0, self.camera.width, self.camera.height)
+            hex_rect = pygame.Rect(
+                min(p[0] for p in points),
+                min(p[1] for p in points),
+                max(p[0] for p in points) - min(p[0] for p in points),
+                max(p[1] for p in points) - min(p[1] for p in points)
+            )
+            
+            if screen_rect.colliderect(hex_rect):
+                # Draw hex
+                tile = self.grid[(q, r)]
+                color = COLORS['EMPTY'] if tile.owner is None else COLORS[tile.owner]
+                pygame.draw.polygon(self.screen, color, points, 0)
+                pygame.draw.polygon(self.screen, (0, 0, 0), points, 1)
                 
-                if from_tile.unit.moves_left >= movement_cost:
-                    to_tile.unit = from_tile.unit
-                    from_tile.unit = None
-                    to_tile.unit.moves_left -= movement_cost
+                # Draw unit or building with scaled size
+                if tile.unit:
+                    unit_color = COLORS[tile.unit.owner]
+                    pygame.draw.circle(self.screen, unit_color, 
+                                    (screen_x, screen_y), 
+                                    (HEX_SIZE // 3) * self.camera.zoom)
+                elif tile.building:
+                    building_color = COLORS[tile.building.owner]
+                    building_size = (HEX_SIZE // 2) * self.camera.zoom
+                    pygame.draw.rect(self.screen, building_color, 
+                                  (screen_x - building_size/2, 
+                                   screen_y - building_size/2,
+                                   building_size, building_size))
 
-    def resolve_combat(self, attacker: Unit, defender: Unit, defender_tile: HexTile):
-        # Simple combat system
-        attack_power = attacker.attack * (attacker.health / 100)
-        defense_power = (defender.defense + defender_tile.get_defense_bonus()) * (defender.health / 100)
-        
-        damage_to_defender = max(0, attack_power - defense_power/2)
-        damage_to_attacker = max(0, defense_power - attack_power/2)
-        
-        defender.health -= damage_to_defender
-        attacker.health -= damage_to_attacker
-        attacker.has_attacked = True
-        
-        # Remove destroyed units
-        if defender.health <= 0:
-            defender_tile.unit = None
-            self.players[defender.owner].units.remove(defender)
-        if attacker.health <= 0:
-            self.grid[self.selected_tile].unit = None
-            self.players[attacker.owner].units.remove(attacker)
-
-    def pixel_to_hex(self, pos: Tuple[int, int]) -> Tuple[int, int]:
+    def pixel_to_hex(self, pos: Tuple[float, float]) -> Tuple[int, int]:
         x, y = pos
-        # Offset to screen center
-        x -= self.screen.get_width() // 2
-        y -= self.screen.get_height() // 2
-        
+        # Convert to hex grid coordinates
         q = (2/3 * x) / HEX_SIZE
         r = (-1/3 * x + math.sqrt(3)/3 * y) / HEX_SIZE
         return self._round_hex(q, r)
-
     def _round_hex(self, q: float, r: float) -> Tuple[int, int]:
         s = -q - r
         q = round(q)
@@ -602,30 +425,30 @@ class Game:
         for q, r in self.grid:
             x = HEX_SIZE * (3/2 * q)
             y = HEX_SIZE * (math.sqrt(3)/2 * q + math.sqrt(3) * r)
-            
-            # Offset to screen center
+        
+        # Offset to screen center
             center_x = self.screen.get_width() // 2
             center_y = self.screen.get_height() // 2
-            
+        
             points = []
             for i in range(6):
                 angle_rad = math.pi / 180 * (60 * i - 30)
                 px = x + HEX_SIZE * math.cos(angle_rad)
                 py = y + HEX_SIZE * math.sin(angle_rad)
                 points.append((px + center_x, py + center_y))
-            
-            # Draw hex
+        
+        # Draw hex
             tile = self.grid[(q, r)]
-            color = COLORS['EMPTY'] if tile.owner is None else COLORS[f'PLAYER{tile.owner}']
+            color = COLORS['EMPTY'] if tile.owner is None else COLORS[tile.owner]
             pygame.draw.polygon(self.screen, color, points, 0)
             pygame.draw.polygon(self.screen, (0, 0, 0), points, 1)
-            
-            # Draw unit or building
+        
+        # Draw unit or building
             if tile.unit:
-                unit_color = COLORS[f'PLAYER{tile.unit.owner}']
+                unit_color = COLORS[tile.unit.owner]
                 pygame.draw.circle(self.screen, unit_color, (center_x + x, center_y + y), HEX_SIZE // 3)
             elif tile.building:
-                building_color = COLORS[f'PLAYER{tile.building.owner}']
+                building_color = COLORS[tile.building.owner]
                 pygame.draw.rect(self.screen, building_color, (center_x + x - HEX_SIZE // 4, center_y + y - HEX_SIZE // 4, HEX_SIZE // 2, HEX_SIZE // 2))
 
     def run(self):
