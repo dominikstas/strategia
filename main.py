@@ -164,6 +164,47 @@ class Game:
         self.possible_moves: List[Tuple[int, int]] = []
         self.running = True
         self.turn = 1
+    
+    def handle_click(self, pos: Tuple[int, int]):
+        # Convert screen coordinates to world coordinates for hex grid
+        world_pos = self.camera.screen_to_world(*pos)
+        hex_pos = self.pixel_to_hex(world_pos)
+        
+        if hex_pos in self.grid:
+            tile = self.grid[hex_pos]
+            if tile.owner == self.current_player:
+                if self.selected_tile == hex_pos:
+                    self.selected_tile = None
+                    self.possible_moves = []
+                else:
+                    self.selected_tile = hex_pos
+                    self.possible_moves = self.get_possible_moves(hex_pos)
+            elif self.selected_tile and hex_pos in self.possible_moves:
+                self.move_unit(self.selected_tile, hex_pos)
+    
+    def get_neighbors(self, pos: Tuple[int, int]) -> List[Tuple[int, int]]:
+        q, r = pos
+        return [(q+1, r), (q-1, r), (q, r+1), (q, r-1), (q+1, r-1), (q-1, r+1)]
+    
+    def get_possible_moves(self, start: Tuple[int, int]) -> List[Tuple[int, int]]:
+        tile = self.grid[start]
+        moves = []
+        visited = set()
+        queue = [(start, 0)]
+        
+        while queue:
+            pos, moves_left = queue.pop(0)
+            if moves_left == 0:
+                continue
+            for neighbor in self.get_neighbors(pos):
+                if (neighbor in self.grid and 
+                    neighbor not in visited and 
+                    self.grid[neighbor].terrain_type != "water"):
+                    visited.add(neighbor)
+                    moves.append(neighbor)
+                    queue.append((neighbor, moves_left - 1))
+        
+        return moves
 
     def _create_initial_grid(self) -> Dict[Tuple[int, int], HexTile]:
         grid = {}
